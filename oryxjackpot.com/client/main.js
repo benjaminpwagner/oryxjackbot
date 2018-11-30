@@ -43,7 +43,7 @@ $(document).ready(function(){
 		},
 
 		start(){
-			__bot.login('many_decas', 'IloveOryx1337')
+			__bot.login('', '')
 			setTimeout(()=>{
 				console.log('starting bot')	
 				this.running = true
