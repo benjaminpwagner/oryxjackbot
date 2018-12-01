@@ -1,9 +1,20 @@
 $(document).ready(function(){
 
-	// var __inventory = document.getElementById('sidebar_inv')
-	// var __items = Array.from($(__inventory).children())
-	// var __printItems = function() { console.log('items: ',__items) }
-	// __printItems()
+	var __items = {}
+
+	setTimeout(()=>{
+		var __inventory = Array.from($('#sidebar_inv').children())
+
+		__inventory.forEach(item => {
+			__items[item.id] = item
+		})
+
+
+
+		console.log(__items[0])
+
+	},5000)
+
 
 	var socket = window.socket = io();
 
@@ -43,7 +54,7 @@ $(document).ready(function(){
 		},
 
 		start(){
-			__bot.login('', '')
+			__bot.login('many_decas', 'IloveOryx1337')
 			setTimeout(()=>{
 				console.log('starting bot')	
 				this.running = true
@@ -53,13 +64,14 @@ $(document).ready(function(){
 
 		loop(){ 
 			if (this.running) setTimeout(()=>this.loop(),100)
-			
+	
 			if (this.timeLeft < 10000 && this.timeLeft !== null) {
 				this.wager([5])
 			}
 		},
 
 		incomingWage(wage, user){
+			console.log(wage.items)
 			this.wagers[user] = wage
 			this.totalWorth += wage.worth
 			console.log(`${user} bet ${wage.items.length} items worth ${wage.worth}F`)
@@ -81,18 +93,17 @@ $(document).ready(function(){
 		},
 
 		stop(){
-			console.log('bot stopped')
+			this.running
+				? console.log('bot stopped')
+				: console.log('bot not running')
 			this.running = false
 		}
 		
 	}
 
 	window.bot = __bot
-	__bot.start()
-
-
-
-
+	// __bot.start()
+	__bot.login('many_decas', 'IloveOryx1337')
 
 
 
