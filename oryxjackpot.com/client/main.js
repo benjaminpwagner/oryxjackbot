@@ -1,44 +1,96 @@
 $(document).ready(function(){
 
-	var __items = {}
-
-	setTimeout(()=>{
-		var __inventory = Array.from($('#sidebar_inv').children())
-
-		__inventory.forEach(item => {
-			__items[item.id] = item
-		})
-
-
-
-		console.log(__items[0])
-
-	},5000)
-
-
 	var socket = window.socket = io();
 
 	var __bot = {
+		maxWagerWorth: 1600,
+		minWagerWorth: 500,
 		running: false,
 		timeLeft: null,
 		totalWorth: 0,
 		wagers: {},
 		hasWagered: false,
+		loggedin: false,
+		inventory: {},
+		myWager: null,
+		shouldWager: false,
 
 		login(username, password){
 			this.username = username
-			console.log(`logging in as '${username}'`)
+			console.log(`attempting login as '${username}'`)
 			socket.emit("signin",{username, password})
+		},
+
+		loginSuccess() {
+			if (!this.loggedin) {
+				console.log('login success')
+				this.loggedin = true
+			}	
+		},
+
+		getInventory() {
+			if (this.loggedin) {
+				this.inventory = {}
+				const sidebar_inv = Array.from($('#sidebar_inv').children())
+				sidebar_inv.forEach(item => {
+					const id = parseInt( $(item).attr('itemid') )
+					const stock = parseInt( $(item).attr('stock') )
+					const children = Array.from($(item).children())
+					const worth = parseInt( children[1].innerHTML.replace('F','') )
+					this.inventory[id] = {id, stock, worth}
+				})
+				this.invArr = Object.keys(this.inventory) 
+					.reduce( (prev, curr) => {
+						if (this.inventory[curr].stock)
+							prev.push(this.inventory[curr])
+							return prev
+					}, [])
+			} else { console.log(`bot can't grab inventory when not logged in`) }
 		},
 
 		print(prop=false){console.log(prop?`${prop}: ${JSON.stringify(this[prop])}`:`game state: ${this}`)},
 
-		wager(items){
-			if (!this.hasWagered) {
+		wager(items, message=''){
+			if (!this.hasWagered && this.shouldWager) {
+				if (message!=='') console.log(message)
 				console.log(`tried to bet [${items}] with ${this.timeLeft}ms left`)
-				socket.emit('wager',items)
+				if (items.length) socket.emit('wager',items)
+				this.hasWagered = true
 			}
-			this.hasWagered = true
+		},
+
+		
+		findWager(targetBet, itemsNeeded=8) {  
+			const avgWorth = Math.floor(targetBet/itemsNeeded)
+			  
+			const itemsNearAvg = []
+			this.invArr.forEach(item => {
+				if (Math.abs(item.worth - avgWorth) < 20)
+					for (let i=0; i<item.stock; i++)
+						itemsNearAvg.push({
+						  id: item.id, worth: item.worth
+						})
+			})
+			  
+			if (itemsNearAvg.length >= itemsNeeded) {
+				const items = itemsNearAvg.slice(0, itemsNeeded)
+				const worth = items.reduce((a,b)=>a+b.worth,0)
+				return {worth, items}
+			} else if (itemsNearAvg.length > 0) {
+				let worth = itemsNearAvg.reduce((a,b)=>a+b.worth,0)
+				const partialTarget = targetBet - worth
+				const itemsLeft = itemsNeeded - itemsNearAvg.length
+				const partialWager = this.findWager(partialTarget, itemsLeft)
+				const items = itemsNearAvg.concat(partialWager.items)
+				worth += partialWager.worth
+				return {worth, items}
+			} else {
+				const partialWager1 = this.findWager(800, 1)
+				const partialWager2 = this.findWager(targetBet-800, itemsNeeded-1)
+				const worth = partialWager1.worth + partialWager2.worth
+				const items = partialWager1.items.concat(partialWager2.items)
+				return {worth, items}
+			}	  
 		},
 
 		trackTimeLeft(){
@@ -54,27 +106,47 @@ $(document).ready(function(){
 		},
 
 		start(){
-			__bot.login('many_decas', 'IloveOryx1337')
+			__bot.login('', '')
 			setTimeout(()=>{
-				console.log('starting bot')	
-				this.running = true
-				this.loop()
+				if (this.loggedin) {
+					console.log('starting bot')	
+					this.running = true
+					this.getInventory()
+					this.loop()
+				} else {
+					console.log('tried to start bot but login took too long')
+					console.log('try `window.bot.start()`')
+				}
+				
 			}, 2000)
 		},
 
 		loop(){ 
 			if (this.running) setTimeout(()=>this.loop(),100)
 	
-			if (this.timeLeft < 10000 && this.timeLeft !== null) {
-				this.wager([5])
+			if ((this.timeLeft < 1500) && (this.timeLeft !== null) ) {
+				this.wager(this.myWager, 'snipe goes here')
 			}
 		},
 
 		incomingWage(wage, user){
-			console.log(wage.items)
+			// console.log(wage.items)
 			this.wagers[user] = wage
 			this.totalWorth += wage.worth
 			console.log(`${user} bet ${wage.items.length} items worth ${wage.worth}F`)
+			const amountToWager = this.totalWorth > this.minWagerWorth
+				? this.totalWorth * 2
+				: this.minWagerWorth
+			this.myWager = this.findWager(amountToWager)
+			if (this.myWager.worth <= this.maxWagerWorth) {
+				console.log('bot should bet')
+				this.shouldWager = true
+			} else {
+				console.log("bot shouldn't bet")
+				this.shouldWager = false
+			} 
+			console.log('bot would bet:',this.myWager)
+			this.myWager = this.myWager.items.map(item => item.id)
 		},
 
 		roundwinner(name) {
@@ -90,6 +162,9 @@ $(document).ready(function(){
 			this.timeLeft = null
 			this.wagers = {}
 			this.totalWorth = 0
+			this.getInventory()
+			this.myWager = null
+			this.shouldWager = false
 		},
 
 		stop(){
@@ -103,7 +178,7 @@ $(document).ready(function(){
 
 	window.bot = __bot
 	// __bot.start()
-	__bot.login('many_decas', 'IloveOryx1337')
+	__bot.login('', '')
 
 
 
@@ -670,6 +745,7 @@ $( 'div' ).on("click",".copy-paste-field",function(){
 		$("#sidebar_img").attr('src',xx.img);
 		round.loggedin = xx.log;
 		if(round.loggedin == true){
+			__bot.loginSuccess()
 			localStorage.username = xx.username;
 		}else{
 			$( '.offer-i' ).each(function(){
@@ -1886,14 +1962,13 @@ $( 'div' ).on("click",".copy-paste-field",function(){
 						break;
 					}
 				}
-
 				$("#game-submit").addClass('has-items');
 				document.getElementById("offer_inv").innerHTML += "<div class='item offer-i' itemid='"+$(this).attr('itemid')+"' style='background-image:"+$(this).css('background-image')+"'><div class='inv-i-val'>"+items[window.id_to_pos(parseInt($(this).attr('itemid')))].val+"F</div></div>";
 		    	$("#sidebar_inv_worth").attr('val',parseInt($("#sidebar_inv_worth").attr('val')) - items[window.id_to_pos(parseInt($(this).attr('itemid')))].val ); //add to value text
 		    	$("#offer_inv_worth").attr('val',parseInt($("#offer_inv_worth").attr('val')) + items[window.id_to_pos(parseInt($(this).attr('itemid')))].val );
 				$("#sidebar_inv_worth").html("<span>INV</span><span style='float: right;color:#f70;'>"+$("#sidebar_inv_worth").attr('val')+"F</span>")
-				$("#offer_inv_worth").html("<span>WAGER</span><span style='float: right;color:#f70;'>"+$("#offer_inv_worth").attr('val')+"F</span>")
-		    }
+				$("#offer_inv_worth").html("<span>WAGER</span><span style='float: right;color:#f70;'>"+$("#offer_inv_worth").attr('val')+"F</span>")				
+			}
 		}
 	});
 	$('#sidebar_inv').bind('mousewheel', function(e){
